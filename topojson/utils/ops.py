@@ -53,6 +53,64 @@ def fast_split(line, splitter):
     return slines
 
 
+def junctions_shared_paths(coord_arr, idx_geom, shared_geoms, length_geoms):
+    """
+    collect junctions of shared paths
+    
+    Input
+    -----
+    coord_array : numpy.array
+        array containing all linestrings 
+    idx_geom : int
+        slice index of linestring
+    shared_geoms : list
+        index values of linestrings that intersect linestring of idx_geom
+    
+    Returns
+    -------
+    junctions : numpy.array
+        array containing all junctions from all intersecting linestrings
+    """
+
+    slice_array = np.isin(coord_arr[shared_geoms], coord_arr[idx_geom]).sum(axis=2) == 2
+
+    d = np.diff(slice_array)
+    row, col, = d.nonzero()
+
+    col += 1
+    # last coordinates of each geom that is True should not get add 1, so subtract 1 again
+    rows_xy_end_true = np.isin(
+        row, slice_array[range(slice_array.shape[0]), length_geoms - 1].nonzero()[0]
+    )
+    col[rows_xy_end_true] -= 1
+
+    # prepend a 0 for slice_array where start is True
+    rows_first_true = np.isin(row, slice_array[:, 0].nonzero()[0])
+    left_side_idx = np.unique(np.searchsorted(row, row, side="left"))
+    insert_idx_left = left_side_idx[rows_first_true[left_side_idx]]
+
+    row = np.insert(row, insert_idx_left, row[insert_idx_left])
+    col = np.insert(col, insert_idx_left, 0)
+
+    # append length of max-1 for end of slice_array is True
+    rows_last_true = np.isin(row, slice_array[:, -1].nonzero()[0])
+    right_side_idx = np.unique(np.searchsorted(row, row, side="right"))
+    insert_idx_right = right_side_idx[rows_last_true[right_side_idx - 1]]
+
+    row = np.insert(row, insert_idx_right, row[insert_idx_right - 1])
+    col = np.insert(col, insert_idx_right, np.max(length_geoms) - 1)
+
+    # calculate exact index of junctions for take function
+    col_idx = np.array((col * 2, col * 2 + 1)).T
+    row_idx = row * (np.max(length_geoms)) * 2
+    take_idx = col_idx + row_idx[None].T
+
+    # collect coordinates of junctions
+    junctions = coord_arr.take(take_idx)
+
+    return junctions
+
+
 def insertor(geoms):
     """
     generator function to use stream loading of geometries for creating a rtree index
@@ -84,7 +142,9 @@ def get_matches(geoms, tree_idx):
     for idx_ls, obj in enumerate(geoms):
         intersect_idx = list(tree_idx.intersection(obj.bounds))
         if len(intersect_idx):
-            matches.append([[idx_ls], intersect_idx])
+            # matches.append([[idx_ls], intersect_idx])
+            intersect_idx.sort()
+            matches.append([idx_ls, intersect_idx])
     return matches
 
 
@@ -110,15 +170,15 @@ def select_unique_combs(linestrings):
     # get index of linestrings intersecting each linestring
     idx_match = get_matches(linestrings, tree_idx)
 
-    # make combinations of unique possibilities
-    combs = []
-    for idx_comb in idx_match:
-        combs.extend(list(itertools.product(*idx_comb)))
+    # # make combinations of unique possibilities
+    # combs = []
+    # for idx_comb in idx_match:
+    #     combs.extend(list(itertools.product(*idx_comb)))
 
-    combs = np.array(combs)
-    combs.sort(axis=1)
-    combs = select_unique(combs)
+    # combs = np.array(combs)
+    # combs.sort(axis=1)
+    # combs = select_unique(combs)
 
-    uniq_line_combs = combs[(np.diff(combs, axis=1) != 0).flatten()]
+    # uniq_line_combs = combs[(np.diff(combs, axis=1) != 0).flatten()]
 
-    return uniq_line_combs
+    return idx_match  # uniq_line_combs
