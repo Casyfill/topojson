@@ -5,6 +5,7 @@ from shapely.ops import shared_paths
 from shapely.ops import linemerge
 from shapely import speedups
 from .utils.ops import select_unique_combs
+from .utils.ops import junctions_shared_paths
 import numpy as np
 import itertools
 import copy
@@ -47,8 +48,8 @@ class Join:
         """
 
         x0, y0, x1, y1 = geometry.MultiLineString(linestrings).bounds
-        kx = 1 / ((quant_factor - 1) / (x1 - x0))
-        ky = 1 / ((quant_factor - 1) / (y1 - y0))
+        kx = (quant_factor - 1) / (x1 - x0)
+        ky = (quant_factor - 1) / (y1 - y0)
 
         for ls in linestrings:
             ls_xy = np.array(ls.xy)
@@ -158,50 +159,74 @@ class Join:
         if quant_factor is not None:
             if quant_factor > 1:
                 kx, ky, x0, y0 = self.prequantize(data["linestrings"], quant_factor)
-                data["transform"] = {"scale": [kx, ky], "translate": [x0, y0]}
+                data["transform"] = {"scale": [1 / kx, 1 / ky], "translate": [x0, y0]}
 
         # create list with unique combinations of lines using a rdtree
-        line_combs = select_unique_combs(data["linestrings"])
+        combs = select_unique_combs(data["linestrings"])
+        # line_combs = select_unique_combs(data["linestrings"])
 
-        # iterate over index combinations
-        for i1, i2 in line_combs:
-            g1 = data["linestrings"][i1]
-            g2 = data["linestrings"][i2]
+        # make numpy array from coordinates of extracted linestrings
+        arraylist = [np.array(g) for g in data["linestrings"]]
+        # lengths of linestrings
+        length_geoms = np.array([len(xy) for xy in arraylist])
 
-            # check if geometry are equal
-            # being equal meaning the geometry object coincide with each other.
-            # a rotated polygon or reversed linestring are both considered equal.
-            if not g1.equals(g2):
-                # geoms are unique, let's find junctions
-                self.shared_segs(g1, g2)
+        # define empty array with size no. linestrings * max. length linestrings * no. coordinates
+        coord_arr = np.ones((len(arraylist), np.max(length_geoms), 2)) * np.nan
+        # populate columns
+        for i, c in enumerate(arraylist):
+            coord_arr[i, : len(c)] = c
 
-        # self.segments are nested lists of LineStrings, get coordinates of each nest
-        s_coords = []
-        for segment in self.segments:
-            s_coords.extend(
-                [
-                    [
-                        (x.xy[0][y], x.xy[1][y])
-                        for x in segment
-                        for y in range(len(x.xy[0]))
-                    ]
-                ]
+        junctions_list = []
+        for val in combs:
+            idx_geom = val[0]
+            shared_geoms = val[1]
+            junctions = junctions_shared_paths(
+                coord_arr, idx_geom, shared_geoms, length_geoms
             )
-            # s_coords.extend([[y for x in segment for y in list(x.coords)]])
+            junctions_list.extend(junctions)
 
-        # only keep junctions that appear only once in each segment (nested list)
-        # coordinates that appear multiple times are not junctions
-        for coords in s_coords:
-            self.junctions.extend(
-                [geometry.Point(i) for i in coords if coords.count(i) is 1]
-            )
+        self.junctions = np.unique(np.array(junctions_list), axis=0)
 
-        # junctions can appear multiple times in multiple segments, remove duplicates
-        self.junctions = [
-            loads(xy) for xy in list(set([x.wkb for x in self.junctions]))
-        ]
+        # # iterate over index combinations
+        # for i1, i2 in line_combs:
+        #     g1 = data["linestrings"][i1]
+        #     g2 = data["linestrings"][i2]
+
+        #     # check if geometry are equal
+        #     # being equal meaning the geometry object coincide with each other.
+        #     # a rotated polygon or reversed linestring are both considered equal.
+        #     if not g1.equals(g2):
+        #         # geoms are unique, let's find junctions
+        #         self.shared_segs(g1, g2)
+
+        # # self.segments are nested lists of LineStrings, get coordinates of each nest
+        # s_coords = []
+        # for segment in self.segments:
+        #     s_coords.extend(
+        #         [
+        #             [
+        #                 (x.xy[0][y], x.xy[1][y])
+        #                 for x in segment
+        #                 for y in range(len(x.xy[0]))
+        #             ]
+        #         ]
+        #     )
+        #     # s_coords.extend([[y for x in segment for y in list(x.coords)]])
+
+        # # only keep junctions that appear only once in each segment (nested list)
+        # # coordinates that appear multiple times are not junctions
+        # for coords in s_coords:
+        #     self.junctions.extend(
+        #         [geometry.Point(i) for i in coords if coords.count(i) is 1]
+        #     )
+
+        # # junctions can appear multiple times in multiple segments, remove duplicates
+        # self.junctions = [
+        #     loads(xy) for xy in list(set([x.wkb for x in self.junctions]))
+        # ]
 
         # prepare to return object
+        data["linestrings"] = coord_arr
         data["junctions"] = self.junctions
 
         return data

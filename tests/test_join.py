@@ -553,3 +553,17 @@ class TestJoin(unittest.TestCase):
         data = geopandas.read_file(geopandas.datasets.get_path("naturalearth_lowres"))
         topo = topojson.join(topojson.extract(data), quant_factor=1e6)
         self.assertEqual(len(topo['junctions']), 377)               
+
+
+    # should keep junctions from partly shared paths
+    # this test was added since there was an error if there were no junctions to take
+    def test_shared_junctions_in_four_geoms(self):
+        data = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
+        data = data[
+            (data.name == "Togo")
+            | (data.name == "Benin")
+            | (data.name == "Burkina Faso")
+            | (data.name == "Niger")    
+        ]
+        topo = topojson.join(topojson.extract(data))
+        self.assertEqual(len(topo["junctions"]), 6)
