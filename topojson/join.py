@@ -169,7 +169,7 @@ class Join:
         arraylist = [np.array(g) for g in data["linestrings"]]
         # lengths of linestrings
         length_geoms = np.array([len(xy) for xy in arraylist])
-
+        print(len(length_geoms))
         # define empty array with size no. linestrings * max. length linestrings * no. coordinates
         coord_arr = np.ones((len(arraylist), np.max(length_geoms), 2)) * np.nan
         # populate columns
@@ -185,7 +185,11 @@ class Join:
             )
             junctions_list.extend(junctions)
 
-        self.junctions = np.unique(np.array(junctions_list), axis=0)
+        self.junctions = (
+            np.unique(np.array(junctions_list), axis=0)
+            if junctions_list
+            else junctions_list
+        )
 
         # # iterate over index combinations
         # for i1, i2 in line_combs:

@@ -567,3 +567,10 @@ class TestJoin(unittest.TestCase):
         ]
         topo = topojson.join(topojson.extract(data))
         self.assertEqual(len(topo["junctions"]), 6)
+
+    # should keep junctions from partly shared paths
+    # this test was added since there was an error if there were no junctions to take
+    def test_shared_junctions_in_all_geoms(self):
+        data = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
+        topo = topojson.join(topojson.extract(data))
+        self.assertEqual(len(topo["junctions"]), 428)

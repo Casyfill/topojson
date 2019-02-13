@@ -105,6 +105,11 @@ def junctions_shared_paths(coord_arr, idx_geom, shared_geoms, length_geoms):
     row = row.astype(float)
     col = col.astype(float)
 
+    # if no idx values return empty array
+    if not len(col):
+        return col
+
+    # else continue
     # for rings we compare the 2nd coord (ix 1) with the last coord
     rings_start_shared = slice_array[:, 1]
     rings_end_shared = slice_array[:, length_geoms - 1]
